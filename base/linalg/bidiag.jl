@@ -225,7 +225,9 @@ end
 ==(A::Bidiagonal, B::Bidiagonal) = (A.dv==B.dv) && (A.ev==B.ev) && (A.isupper==B.isupper)
 
 SpecialMatrix = Union{Bidiagonal, SymTridiagonal, Tridiagonal, AbstractTriangular}
-*(A::SpecialMatrix, B::SpecialMatrix)=full(A)*full(B)
+# to avoid ambiguity warning, but shouldn't be necessary
+*(A::AbstractTriangular, B::SpecialMatrix) = full(A) * full(B)
+*(A::SpecialMatrix, B::SpecialMatrix) = full(A) * full(B)
 
 #Generic multiplication
 for func in (:*, :Ac_mul_B, :A_mul_Bc, :/, :A_rdiv_Bc)

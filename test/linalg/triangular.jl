@@ -485,3 +485,6 @@ let
     @test_throws DimensionMismatch A_rdiv_Bt!(A, UnitLowerTriangular(B))
     @test_throws DimensionMismatch A_rdiv_Bt!(A, UnitUpperTriangular(B))
 end
+
+# Issue 16196
+@test UpperTriangular(eye(3)) \ sub(ones(3), [1,2,3]) == ones(3)

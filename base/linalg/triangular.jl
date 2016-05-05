@@ -1287,6 +1287,27 @@ function A_rdiv_Bt!(A::StridedMatrix, B::UnitLowerTriangular)
     A
 end
 
+for f in (:A_rdiv_B!, :A_rdiv_Bc!, :A_rdiv_Bt!)
+    for (uplo, fuplo) in ((:Lower, :tril!), (:Upper, :triu!))
+        mat  = Symbol(uplo, :Triangular)
+        umat = Symbol(:Unit, mat)
+        @eval begin
+            $f(A::$mat, B::Union{$mat,$umat}) = ($mat)($f($fuplo(A.data), B))
+        end
+    end
+    @eval $f(A::AbstractTriangular, B::AbstractTriangular) = $f(full!(A), B)
+end
+for f in (:A_ldiv_B!, :Ac_ldiv_B!, :At_ldiv_B!)
+    for (uplo, fuplo) in ((:Lower, :tril!), (:Upper, :triu!))
+        mat  = Symbol(uplo, :Triangular)
+        umat = Symbol(:Unit, mat)
+        @eval begin
+            $f(A::Union{$mat,$umat}, B::$mat) = ($mat)($f(A, $fuplo(B.data)))
+        end
+    end
+    @eval $f(A::AbstractTriangular, B::AbstractTriangular) = $f(A, full!(B))
+end
+
 # Promotion
 ## Promotion methods in matmul don't apply to triangular multiplication since it is inplace. Hence we have to make very similar definitions, but without allocation of a result array. For multiplication and unit diagonal division the element type doesn't have to be stable under division whereas that is necessary in the general triangular solve problem.
 
@@ -1297,23 +1318,34 @@ for t in (UpperTriangular, UnitUpperTriangular, LowerTriangular, UnitLowerTriang
     end
 end
 
-for f in (:*, :Ac_mul_B, :At_mul_B, :\, :Ac_ldiv_B, :At_ldiv_B)
+# for f in (:*, :Ac_mul_B, :At_mul_B, :\, :Ac_ldiv_B, :At_ldiv_B)
+#     @eval begin
+#         ($f)(A::AbstractTriangular, B::AbstractTriangular) = ($f)(A, full(B))
+#     end
+# end
+for f in (:*, :Ac_mul_B, :At_mul_B)
     @eval begin
         ($f)(A::AbstractTriangular, B::AbstractTriangular) = ($f)(A, full(B))
     end
 end
-for f in (:A_mul_Bc, :A_mul_Bt, :Ac_mul_Bc, :At_mul_Bt, :/, :A_rdiv_Bc, :A_rdiv_Bt)
+# for f in (:A_mul_Bc, :A_mul_Bt, :Ac_mul_Bc, :At_mul_Bt, :/, :A_rdiv_Bc, :A_rdiv_Bt)
+#     @eval begin
+#         ($f)(A::AbstractTriangular, B::AbstractTriangular) = ($f)(full(A), B)
+#     end
+# end
+for f in (:A_mul_Bc, :A_mul_Bt, :Ac_mul_Bc, :At_mul_Bt)
     @eval begin
         ($f)(A::AbstractTriangular, B::AbstractTriangular) = ($f)(full(A), B)
     end
 end
 
 ## The general promotion methods
+for mat in (:AbstractVector, AbstractMatrix)
 ### Multiplication with triangle to the left and hence rhs cannot be transposed.
 for (f, g) in ((:*, :A_mul_B!), (:Ac_mul_B, :Ac_mul_B!), (:At_mul_B, :At_mul_B!))
     @eval begin
-        function ($f){TA,TB}(A::AbstractTriangular{TA}, B::StridedVecOrMat{TB})
-            TAB = typeof(zero(TA)*zero(TB) + zero(TA)*zero(TB))
+        function ($f)(A::AbstractTriangular, B::$mat)
+            TAB = typeof(zero(eltype(A))*zero(eltype(B)) + zero(eltype(A))*zero(eltype(B)))
             ($g)(convert(AbstractArray{TAB}, A), copy_oftype(B, TAB))
         end
     end
@@ -1321,8 +1353,8 @@ end
 ### Left division with triangle to the left hence rhs cannot be transposed. No quotients.
 for (f, g) in ((:\, :A_ldiv_B!), (:Ac_ldiv_B, :Ac_ldiv_B!), (:At_ldiv_B, :At_ldiv_B!))
     @eval begin
-        function ($f){TA,TB,S}(A::Union{UnitUpperTriangular{TA,S},UnitLowerTriangular{TA,S}}, B::StridedVecOrMat{TB})
-            TAB = typeof(zero(TA)*zero(TB) + zero(TA)*zero(TB))
+        function ($f)(A::Union{UnitUpperTriangular,UnitLowerTriangular}, B::$mat)
+            TAB = typeof(zero(eltype(A))*zero(eltype(B)) + zero(eltype(A))*zero(eltype(B)))
             ($g)(convert(AbstractArray{TAB}, A), copy_oftype(B, TAB))
         end
     end
@@ -1330,8 +1362,8 @@ end
 ### Left division with triangle to the left hence rhs cannot be transposed. Quotients.
 for (f, g) in ((:\, :A_ldiv_B!), (:Ac_ldiv_B, :Ac_ldiv_B!), (:At_ldiv_B, :At_ldiv_B!))
     @eval begin
-        function ($f){TA,TB,S}(A::Union{UpperTriangular{TA,S},LowerTriangular{TA,S}}, B::StridedVecOrMat{TB})
-            TAB = typeof((zero(TA)*zero(TB) + zero(TA)*zero(TB))/one(TA))
+        function ($f)(A::Union{UpperTriangular,LowerTriangular}, B::$mat)
+            TAB = typeof((zero(eltype(A))*zero(eltype(B)) + zero(eltype(A))*zero(eltype(B)))/one(eltype(A)))
             ($g)(convert(AbstractArray{TAB}, A), copy_oftype(B, TAB))
         end
     end
@@ -1339,8 +1371,8 @@ end
 ### Multiplication with triangle to the rigth and hence lhs cannot be transposed.
 for (f, g) in ((:*, :A_mul_B!), (:A_mul_Bc, :A_mul_Bc!), (:A_mul_Bt, :A_mul_Bt!))
     @eval begin
-        function ($f){TA,TB}(A::StridedVecOrMat{TA}, B::AbstractTriangular{TB})
-            TAB = typeof(zero(TA)*zero(TB) + zero(TA)*zero(TB))
+        function ($f)(A::$mat, B::AbstractTriangular)
+            TAB = typeof(zero(eltype(A))*zero(eltype(B)) + zero(eltype(A))*zero(eltype(B)))
             ($g)(copy_oftype(A, TAB), convert(AbstractArray{TAB}, B))
         end
     end
@@ -1348,20 +1380,22 @@ end
 ### Right division with triangle to the right hence lhs cannot be transposed. No quotients.
 for (f, g) in ((:/, :A_rdiv_B!), (:A_rdiv_Bc, :A_rdiv_Bc!), (:A_rdiv_Bt, :A_rdiv_Bt!))
     @eval begin
-        function ($f){TA,TB,S}(A::StridedVecOrMat{TA}, B::Union{UnitUpperTriangular{TB,S},UnitLowerTriangular{TB,S}})
-            TAB = typeof(zero(TA)*zero(TB) + zero(TA)*zero(TB))
+        function ($f)(A::$mat, B::Union{UnitUpperTriangular,UnitLowerTriangular})
+            TAB = typeof(zero(eltype(A))*zero(eltype(B)) + zero(eltype(A))*zero(eltype(B)))
             ($g)(copy_oftype(A, TAB), convert(AbstractArray{TAB}, B))
         end
     end
 end
+
 ### Right division with triangle to the right hence lhs cannot be transposed. Quotients.
 for (f, g) in ((:/, :A_rdiv_B!), (:A_rdiv_Bc, :A_rdiv_Bc!), (:A_rdiv_Bt, :A_rdiv_Bt!))
     @eval begin
-        function ($f){TA,TB,S}(A::StridedVecOrMat{TA}, B::Union{UpperTriangular{TB,S},LowerTriangular{TB,S}})
-            TAB = typeof((zero(TA)*zero(TB) + zero(TA)*zero(TB))/one(TA))
+        function ($f)(A::$mat, B::Union{UpperTriangular,LowerTriangular})
+            TAB = typeof((zero(eltype(A))*zero(eltype(B)) + zero(eltype(A))*zero(eltype(B)))/one(eltype(A)))
             ($g)(copy_oftype(A, TAB), convert(AbstractArray{TAB}, B))
         end
     end
+end
 end
 ### Fallbacks brought in from linalg/bidiag.jl while fixing #14506.
 # Eventually the above promotion methods should be generalized as
