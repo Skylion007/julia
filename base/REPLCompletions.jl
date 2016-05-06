@@ -268,12 +268,7 @@ get_value_getfield(sym, fn) = get_value(sym, fn)
 function get_type_call(expr::Expr)
     f_name = expr.args[1]
     # The if statement should find the f function. How f is found depends on how f is referenced
-    if isa(f_name, TopNode)
-        ft = typeof(Base.(f_name.name))
-        found = true
-    else
-        ft, found = get_type(f_name, Main)
-    end
+    ft, found = get_type(f_name, Main)
     found || return (Any, false) # If the function f is not found return Any.
     args = Any[]
     for ex in expr.args[2:end] # Find the type of the function arguments
@@ -297,7 +292,7 @@ function get_type(sym::Expr, fn)
     if sym.head === :call
         # getfield call is special cased as the evaluation of getfield provides good type information,
         # is inexpensive and it is also performed in the complete_symbol function.
-        if sym.args[1] === TopNode(:getfield)
+        if sym.args[1] === GlobalRef(Base,:getfield) || sym.args[1] === GlobalRef(Core,:getfield)
             val, found = get_value_getfield(sym, Main)
             return found ? Base.typesof(val).parameters[1] : Any, found
         end
